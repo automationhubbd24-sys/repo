@@ -126,17 +126,17 @@ function atBlockInfo(googleResponse) {
   return { reason, stage, promptTokens };
 }
 function atBlockMessage(info) {
-  return '上游内容安全拦截（' + info.reason + '）：模型拒绝生成，本次没有输出。' +
-    '这类拦截有时是误判，可以直接重试；多次被拦请调整内容。';
+  return 'Upstream content safety block (' + info.reason + ' ): the model refused generation; no output was produced.' +
+    'This can be a false positive; retry directly, or adjust the content after repeated blocks.';
 }
 // Upstream ended the generation early (finish=OTHER etc.) without emit_answer. Nothing is returned
 // to the client; the error carries the finish reason and token counts so the request record shows why.
 function atFinishPayload(info, httpStatus) {
   const payload = info.timeLimit
     ? { error: { code: httpStatus, type: 'upstream_incomplete', status: 'AT_TIME_LIMIT',
-      message: '已用时约 ' + Math.round(info.elapsedMs / 60000) + ' 分钟仍未得到完整答案（finish=' + info.reason + '），超过 6 分钟不再续写，直接返回失败。已生成约 ' + info.chars + ' 字被丢弃，可重试。' } }
+      message: 'After about ' + Math.round(info.elapsedMs / 60000) + ' minutes, no complete answer was received (finish=' + info.reason + ' ); continuations stop after 6 minutes and fail. About ' + info.chars + ' characters were discarded; retry the request.' } }
     : { error: { code: httpStatus, type: 'upstream_incomplete', status: 'FINISH_' + info.reason,
-    message: '上游中途结束（finish=' + info.reason + '），未返回内容。已生成约 ' + info.chars + ' 字被丢弃，可重试。' } };
+    message: 'Upstream ended early (finish=' + info.reason + ' ); no content was returned. About ' + info.chars + ' characters were discarded; retry the request.' } };
   if (info.promptTokens !== null || info.outputTokens !== null) payload.usage = { prompt_tokens: info.promptTokens, completion_tokens: info.outputTokens };
   return payload;
 }
@@ -214,7 +214,7 @@ class AuthSource {
 
     // 存取扫描到的原始索引
     this.initialIndices = [...new Set(indices)].sort((a, b) => a - b);
-    this.availableIndices = [...this.initialIndices]; // 先假设都可用
+    this.availableIndices = [...this.initialIndices]; // 先假设都Available
 
     this.logger.info(
       `[Auth] 在 '${this.authMode}' 模式下，初步发现 ${
@@ -239,7 +239,7 @@ class AuthSource {
           validIndices.push(index);
           this.accountNameMap.set(
             index,
-            authData.accountName || "N/A (未命名)",
+            authData.accountName || "N/A (unnamed)",
           );
         } catch (e) {
           invalidSourceDescriptions.push(`auth-${index}`);
@@ -255,7 +255,7 @@ class AuthSource {
           invalidSourceDescriptions.length
         } 个格式错误或无法读取的认证源: [${invalidSourceDescriptions.join(
           ", ",
-        )}]，将从可用列表中移除。`,
+        )}]，将从Available列表中移除。`,
       );
     }
 
@@ -395,7 +395,7 @@ class BrowserManager {
         : `文件 auth-${authIndex}.json`;
     this.logger.info("==================================================");
     this.logger.info(
-      `🔄 [Browser] 正在为账号 #${authIndex} 创建新的浏览器上下文`,
+      `🔄 [Browser] 正在为Account #${authIndex} 创建新的浏览器上下文`,
     );
     this.logger.info(`   • 认证源: ${sourceDescription}`);
     this.logger.info("==================================================");
@@ -440,10 +440,11 @@ return JSON.stringify({s:r.status,t:tx,tier:tier||''});};window.__gcCall.v=5;win
 return window.__tb?'ok':'wait';})()`;
         const pg = this.page, log = this.logger;
         global.__gcbPage = pg; let gcbKey = null; const gcbHx = {}; const gcbWaa = 'AIzaSyBGb5fGAyC-pRcRU6MUHb__b_vKha71HRE'; const GCB_HARD_MS = Number(process.env.GCB_HARD_MS) || 660000; const gcbOps = new Map(); const gcbCancelled = new Set(); let gcbSeq = 0;
-        this.gcbCancel = rid => { gcbCancelled.add(rid); setTimeout(() => gcbCancelled.delete(rid), 120000).unref?.(); const op = gcbOps.get(rid); if (!op) return false; gcbOps.delete(rid); log.info('[GCBridge] client cancelled ' + rid + '; aborting upstream call ' + op); pg.evaluate(o => window.wrappedJSObject.__gcAbort(o), op).catch(() => {}); return true; }; // Google itself cuts at ~600s
+        const gcbDiag = e => { const x = e || {}; return 'name=' + String(x.name || typeof e) + ' message=' + String(x.message || '') + ' stack=' + String(x.stack || '') + ' string=' + String(e); };
+        this.gcbCancel = rid => { gcbCancelled.add(rid); setTimeout(() => gcbCancelled.delete(rid), 120000).unref?.(); const op = gcbOps.get(rid); if (!op) return false; gcbOps.delete(rid); log.info('[GCBridge] client cancelled ' + rid + '; aborting upstream call ' + op); pg.evaluate(({ op }) => { const abort = window.__gcAbort; return typeof abort === 'function' ? abort(op) : false; }, { op }).catch(e => log.warn('[GCBridge] cancellation evaluation error ' + gcbDiag(e))); return true; }; // Google itself cuts at ~600s
         this.context.on('request', r => { try { if (!/alkalimakersuite-pa\.clients6\.google\.com\/\$rpc\/.*MakerSuiteService\//.test(r.url())) return; const k = r.headers()['x-goog-api-key']; if (k && k !== gcbWaa && /^AIza/.test(k)) gcbKey = k; const h = r.headers(); if (h['x-aistudio-g1-tier']) gcbHx.tier = h['x-aistudio-g1-tier']; if (h['x-goog-ext-519733851-bin']) gcbHx.ext = h['x-goog-ext-519733851-bin']; } catch {} });
-        const gcbInstall = () => pg.evaluate(c => window.wrappedJSObject.eval(c), GCB_INSTALL).catch(() => 'err');
-        const gcbTimer = setInterval(() => { if (pg.isClosed()) return clearInterval(gcbTimer); gcbInstall(); }, 3000);
+        const gcbInstall = async diagnose => { try { return await pg.evaluate(c => { const installed = eval(c); const call = window.__gcCall; return { installed, available: typeof call === 'function', version: call && call.v }; }, GCB_INSTALL); } catch (e) { if (diagnose) log.warn('[GCBridge] install evaluation error ' + gcbDiag(e)); return { error: true, available: false, version: null }; } };
+        const gcbTimer = setInterval(() => { if (pg.isClosed()) return clearInterval(gcbTimer); gcbInstall(false); }, 3000);
         const CAT = { HARM_CATEGORY_HARASSMENT: 7, HARM_CATEGORY_HATE_SPEECH: 8, HARM_CATEGORY_SEXUALLY_EXPLICIT: 9, HARM_CATEGORY_DANGEROUS_CONTENT: 10, HARM_CATEGORY_CIVIC_INTEGRITY: 11 };
         const THR = { BLOCK_LOW_AND_ABOVE: 1, BLOCK_MEDIUM_AND_ABOVE: 2, BLOCK_ONLY_HIGH: 3, BLOCK_NONE: 4, OFF: 5 };
         const FIN = { 1: 'STOP', 2: 'MAX_TOKENS', 3: 'SAFETY', 4: 'RECITATION', 5: 'OTHER' };
@@ -550,10 +551,11 @@ return window.__tb?'ok':'wait';})()`;
           try {
             const g = JSON.parse(a[1] || '{}'); const gcbRid = typeof g.__aisRid === 'string' ? g.__aisRid : null; delete g.__aisRid;
             const { body, ht } = buildBody(mm[1], g);
-            await gcbInstall();
+            const gcbReady = await gcbInstall(true);
+            if (!gcbReady.available || gcbReady.version !== 5) throw new Error('GCBridge unavailable: window.__gcCall version=' + String(gcbReady.version) + ' (expected 5), install=' + String(gcbReady.installed));
             const gcbT0 = Date.now(); const gcbOp = 'g' + (++gcbSeq); if (gcbRid) { if (gcbCancelled.has(gcbRid)) { log.info('[GCBridge] ' + gcbRid + ' already cancelled; not calling upstream'); return route.abort().catch(() => {}); } gcbOps.set(gcbRid, gcbOp); }
-            const code = 'window.__gcCall(' + JSON.stringify(body) + ',' + JSON.stringify(ht) + ',' + JSON.stringify(gcbKey) + ',' + JSON.stringify(Object.assign({}, gcbHx, { hardMs: GCB_HARD_MS, op: gcbOp })) + ')';
-            let gcbBk; const raw = await Promise.race([pg.evaluate(c => window.wrappedJSObject.eval(c), code), new Promise(rs => { gcbBk = setTimeout(() => rs(JSON.stringify({ s: 504, t: JSON.stringify({ error: { code: 504, status: 'UPSTREAM_NO_RESPONSE', message: '浏览器页面超过 ' + Math.round((GCB_HARD_MS + 30000) / 60000) + ' 分钟没有返回，已主动中止，请重试。' } }) })), GCB_HARD_MS + 30000); })]).finally(() => clearTimeout(gcbBk)); // backstop only: Google cuts at ~600s
+            const gcbArgs = { body, ht, key: gcbKey, hx: Object.assign({}, gcbHx, { hardMs: GCB_HARD_MS, op: gcbOp }) };
+            let gcbBk; const raw = await Promise.race([pg.evaluate(({ body, ht, key, hx }) => { const call = window.__gcCall; if (typeof call !== 'function' || call.v !== 5) throw new Error('GCBridge unavailable in page context: window.__gcCall version=' + String(call && call.v) + ' (expected 5)'); return call(body, ht, key, hx); }, gcbArgs), new Promise(rs => { gcbBk = setTimeout(() => rs(JSON.stringify({ s: 504, t: JSON.stringify({ error: { code: 504, status: 'UPSTREAM_NO_RESPONSE', message: '浏览器页面超过 ' + Math.round((GCB_HARD_MS + 30000) / 60000) + ' 分钟没有返回，已主动中止，请重试。' } }) })), GCB_HARD_MS + 30000); })]).finally(() => clearTimeout(gcbBk)); // backstop only: Google cuts at ~600s
             if (gcbRid) gcbOps.delete(gcbRid); const r = JSON.parse(raw);
             if (r.s === 499) { log.info('[GCBridge] ' + mm[1] + ' upstream call ' + gcbOp + ' cancelled after ' + (Date.now() - gcbT0) + 'ms'); return route.abort().catch(() => {}); }
             if (r.s !== 200) { log.warn('[GCBridge] ' + mm[1] + ' status ' + r.s + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' ' + String(r.t).slice(0, 300)); return route.fulfill({ status: r.s, contentType: 'application/json+protobuf; charset=UTF-8', body: r.t }); }
@@ -563,12 +565,12 @@ return window.__tb?'ok':'wait';})()`;
             if (streamed) { const tail = arr.length && !isChunk(arr[arr.length - 1]) ? arr[arr.length - 1] : null; out = '[[' + chunks.map(c => JSON.stringify([JSON.stringify(c)])).concat(tail ? [JSON.stringify(tail)] : []).join(',') + ']]'; }
             else out = JSON.stringify([JSON.stringify(merge(chunks))]);
             { const lf = (chunks[chunks.length - 1] && chunks[chunks.length - 1].candidates[0] && chunks[chunks.length - 1].candidates[0].finishReason) || '-'; if (lf !== 'STOP') { try { const sh = v => v == null ? null : typeof v === 'string' ? 's' + v.length : Array.isArray(v) ? 'a' + JSON.stringify(v).length : typeof v; const raw = arr.filter(isChunk).map(m => (m[0] || []).map(c => [(Array.isArray(c && c[0] && c[0][0]) ? c[0][0] : []).map(p2 => Array.isArray(p2) ? p2.map((v, i) => v == null ? null : i + ':' + sh(v)).filter(Boolean).join('|') : sh(p2)).join(' ; '), 'cand=' + (Array.isArray(c) ? c.map((v, i) => v == null ? null : i + ':' + sh(v)).filter(Boolean).join('|') : sh(c))].join(' / ')).join(' || ')); log.warn('[GCBridge] shape ' + mm[1] + ' finish=' + lf + ' top=' + arr0.length + ' chunks=' + raw.length + ' :: ' + raw.slice(-3).join(' ## ').slice(0, 1500)); } catch (e) { log.warn('[GCBridge] shape failed ' + e.message); } } }
-            { const lc = chunks[chunks.length - 1]; if (chunks.length && !(lc.candidates[0] && lc.candidates[0].finishReason)) { let chars = 0; for (const c of chunks) for (const p of ((c.candidates[0] && c.candidates[0].content && c.candidates[0].content.parts) || [])) { if (typeof p.text === 'string' && !p.thought) chars += p.text.length; const fa = p.functionCall && p.functionCall.args; if (fa && typeof fa.answer === 'string') chars += fa.answer.length; } const sec = Math.round((Date.now() - gcbT0) / 1000); log.warn('[GCBridge] ' + mm[1] + ' upstream cut: no finishReason after ' + sec + 's chunks=' + chunks.length + ' bytes=' + String(r.t || '').length + ' chars=' + chars); return route.fulfill({ status: 504, contentType: 'application/json; charset=UTF-8', body: JSON.stringify({ error: { code: 504, status: 'UPSTREAM_CUT', message: 'Google 在约 ' + Math.max(1, Math.round(sec / 60)) + ' 分钟时断开连接，回答未写完（已生成约 ' + chars + ' 字被丢弃）。请重试，或让回答短一些。' } }) }); } }
+            { const lc = chunks[chunks.length - 1]; if (chunks.length && !(lc.candidates[0] && lc.candidates[0].finishReason)) { let chars = 0; for (const c of chunks) for (const p of ((c.candidates[0] && c.candidates[0].content && c.candidates[0].content.parts) || [])) { if (typeof p.text === 'string' && !p.thought) chars += p.text.length; const fa = p.functionCall && p.functionCall.args; if (fa && typeof fa.answer === 'string') chars += fa.answer.length; } const sec = Math.round((Date.now() - gcbT0) / 1000); log.warn('[GCBridge] ' + mm[1] + ' upstream cut: no finishReason after ' + sec + 's chunks=' + chunks.length + ' bytes=' + String(r.t || '').length + ' chars=' + chars); return route.fulfill({ status: 504, contentType: 'application/json; charset=UTF-8', body: JSON.stringify({ error: { code: 504, status: 'UPSTREAM_CUT', message: 'Google 在约 ' + Math.max(1, Math.round(sec / 60)) + ' 分钟时断开连接，回答未写完（已生成约 ' + chars + ' 字被丢弃)。请重试，或让回答短一些。' } }) }); } }
             log.info('[GCBridge] ' + mm[1] + (streamed ? ' stream' : ' unary') + ' ok chunks=' + chunks.length + ' tier=' + (r.tier || '-') + ' ms=' + (Date.now() - gcbT0) + ' bytes=' + String(r.t || '').length + ' finish=' + ((chunks[chunks.length - 1] && chunks[chunks.length - 1].candidates[0] && chunks[chunks.length - 1].candidates[0].finishReason) || '-'));
             return route.fulfill({ status: 200, contentType: 'application/json+protobuf; charset=UTF-8', body: out });
           } catch (e) {
-            log.warn('[GCBridge] error ' + e.message);
-            return route.fulfill({ status: 500, contentType: 'application/json+protobuf; charset=UTF-8', body: JSON.stringify([13, 'GCBridge: ' + e.message]) });
+            log.warn('[GCBridge] error ' + gcbDiag(e));
+            return route.fulfill({ status: 500, contentType: 'application/json+protobuf; charset=UTF-8', body: JSON.stringify([13, 'GCBridge: ' + String(e && e.message || e)]) });
           }
         });
       }
@@ -647,8 +649,8 @@ return window.__tb?'ok':'wait';})()`;
         this.logger.warn(`[Browser] 无法获取页面标题: ${e.message}`);
       }
 
-      this.logger.info(`[Browser] [诊断] URL: ${currentUrl}`);
-      this.logger.info(`[Browser] [诊断] Title: "${pageTitle}"`);
+      this.logger.info(`[Browser] [Diagnostic] URL: ${currentUrl}`);
+      this.logger.info(`[Browser] [Diagnostic] Title: "${pageTitle}"`);
 
       // 1. 检查 Cookie 是否失效 (跳转回登录页)
       if (
@@ -1004,7 +1006,7 @@ return window.__tb?'ok':'wait';})()`;
 
           if (isStillThere) {
             this.logger.warn(
-              `[Browser] ⚠️ 物理点击似乎无效（按钮仍在），等待后仅重试明确的 Launch 按钮...`,
+              `[Browser] ⚠️ 物理点击似乎无效（按钮仍在)，等待后仅重试明确的 Launch 按钮...`,
             );
 
             await new Promise((r) => setTimeout(r, 2000));
@@ -1170,7 +1172,7 @@ class ConnectionRegistry extends EventEmitter {
     // --- 核心修改：不立即清理队列，而是启动一个缓冲期 ---
     this.logger.info("[Server] 启动5秒重连缓冲期...");
     this.reconnectGraceTimer = setTimeout(() => {
-      // 5秒后，如果没有新连接进来（即reconnectGraceTimer未被清除），则确认是真实断开
+      // 5秒后，如果没有新连接进来（即reconnectGraceTimer未被清除)，则确认是真实断开
       this.logger.error(
         "[Server] 缓冲期结束，未检测到重连。确认连接丢失，正在清理所有待处理请求...",
       );
@@ -1195,7 +1197,7 @@ class ConnectionRegistry extends EventEmitter {
       if (queue) {
         this._routeMessage(parsedMessage, queue);
       } else {
-        // 在缓冲期内，旧的请求队列可能仍然存在，但连接已经改变，这可能会导致找不到队列。
+        // 在缓冲期内，旧的Request Queue可能仍然存在，但连接已经改变，这可能会导致找不到队列。
         // 暂时只记录警告，避免因竞速条件而报错。
         this.logger.warn(`[Server] 收到未知或已过时请求ID的消息: ${requestId}`);
       }
@@ -1280,7 +1282,7 @@ class RequestHandler {
 
     if (currentIndexInArray === -1) {
       this.logger.warn(
-        `[Auth] 当前索引 ${this.currentAuthIndex} 不在可用列表中，将切换到第一个可用索引。`,
+        `[Auth] 当前索引 ${this.currentAuthIndex} 不在Available列表中，将切换到第一个Available索引。`,
       );
       return available[0];
     }
@@ -1293,7 +1295,7 @@ class RequestHandler {
     const available = this.authSource.availableIndices;
 
     if (available.length === 0) {
-      throw new Error("没有可用的认证源，无法切换。");
+      throw new Error("没有Available的认证源，无法切换。");
     }
 
     if (this.isAuthSwitching) {
@@ -1325,7 +1327,7 @@ class RequestHandler {
           this.usageCount = 0;
 
           this.logger.info(
-            `✅ [Auth] 单账号 #${singleIndex} 重启/刷新成功，使用计数已清零。`,
+            `✅ [Auth] 单Account #${singleIndex} 重启/刷新成功，使用计数已清零。`,
           );
           return { success: true, newIndex: singleIndex };
         } catch (error) {
@@ -1350,19 +1352,19 @@ class RequestHandler {
         this.failureCount = 0;
         this.usageCount = 0;
         this.logger.info(
-          `✅ [Auth] 成功切换到账号 #${this.currentAuthIndex}，计数已重置。`,
+          `✅ [Auth] 成功切换到Account #${this.currentAuthIndex}，计数已重置。`,
         );
         return { success: true, newIndex: this.currentAuthIndex };
       } catch (error) {
         this.logger.error(
-          `❌ [Auth] 切换到账号 #${nextAuthIndex} 失败: ${error.message}`,
+          `❌ [Auth] to account #${nextAuthIndex} failed: ${error.message}`,
         );
         this.logger.warn(
-          `🚨 [Auth] 切换失败，正在尝试回退到上一个可用账号 #${previousAuthIndex}...`,
+          `🚨 [Auth] 切换失败，正在尝试回退到上一个AvailableAccount #${previousAuthIndex}...`,
         );
         try {
           await this.browserManager.launchOrSwitchContext(previousAuthIndex);
-          this.logger.info(`✅ [Auth] 成功回退到账号 #${previousAuthIndex}！`);
+          this.logger.info(`✅ [Auth] 成功回退到Account #${previousAuthIndex}！`);
           this.failureCount = 0;
           this.usageCount = 0;
           this.logger.info("[Auth] 失败和使用计数已在回退成功后重置为0。");
@@ -1373,7 +1375,7 @@ class RequestHandler {
           };
         } catch (fallbackError) {
           this.logger.error(
-            `FATAL: ❌❌❌ [Auth] 紧急回退到账号 #${previousAuthIndex} 也失败了！服务可能中断。`,
+            `FATAL: ❌❌❌ [Auth] 紧急回退到Account #${previousAuthIndex} 也失败了！服务可能中断。`,
           );
           throw fallbackError;
         }
@@ -1392,24 +1394,24 @@ class RequestHandler {
     if (!this.authSource.availableIndices.includes(targetIndex)) {
       return {
         success: false,
-        reason: `切换失败：账号 #${targetIndex} 无效或不存在。`,
+        reason: `切换失败：Account #${targetIndex} 无效或不存在。`,
       };
     }
 
     this.isSystemBusy = true;
     this.isAuthSwitching = true;
     try {
-      this.logger.info(`🔄 [Auth] 开始切换到指定账号 #${targetIndex}...`);
+      this.logger.info(`🔄 [Auth] 开始Switch to Selected Account #${targetIndex}...`);
       await this.browserManager.switchAccount(targetIndex);
       this.failureCount = 0;
       this.usageCount = 0;
       this.logger.info(
-        `✅ [Auth] 成功切换到账号 #${this.currentAuthIndex}，计数已重置。`,
+        `✅ [Auth] 成功切换到Account #${this.currentAuthIndex}，计数已重置。`,
       );
       return { success: true, newIndex: this.currentAuthIndex };
     } catch (error) {
       this.logger.error(
-        `❌ [Auth] 切换到指定账号 #${targetIndex} 失败: ${error.message}`,
+        `❌ [Auth] Switch to Selected Account #${targetIndex} failed: ${error.message}`,
       );
       // 对于指定切换，失败了就直接报错，不进行回退，让用户知道这个账号有问题
       throw error;
@@ -1451,7 +1453,7 @@ class RequestHandler {
       try {
         await this._switchToNextAuth();
         // 如果上面这行代码没有抛出错误，说明切换/回退成功了
-        const successMessage = `🔄 目标账户无效，已自动回退至账号 #${this.currentAuthIndex}。`;
+        const successMessage = `🔄 目标账户无效，已自动回退至Account #${this.currentAuthIndex}。`;
         this.logger.info(`[Auth] ${successMessage}`);
         if (res) this._sendErrorChunkToClient(res, successMessage);
       } catch (error) {
@@ -1459,15 +1461,15 @@ class RequestHandler {
 
         if (error.message.includes("Only one account is available")) {
           // 场景：单账号无法切换
-          userMessage = "❌ 切换失败：只有一个可用账号。";
-          this.logger.info("[Auth] 只有一个可用账号，失败计数已重置。");
+          userMessage = "❌ 切换失败：只有一个Available账号。";
+          this.logger.info("[Auth] 只有一个Available账号，失败计数已重置。");
           this.failureCount = 0;
         } else if (error.message.includes("回退失败原因")) {
           // 场景：切换到坏账号后，连回退都失败了
           userMessage = `❌ 致命错误：自动切换和紧急回退均失败，服务可能已中断，请检查日志！`;
         } else if (error.message.includes("切换到账号")) {
-          // 场景：切换到坏账号后，成功回退（这是一个伪“成功”，本质是上一个操作失败了）
-          userMessage = `⚠️ 自动切换失败：已自动回退到账号 #${this.currentAuthIndex}，请检查目标账号是否存在问题。`;
+          // 场景：切换到坏账号后，成功回退（这是一个伪“成功”，本质是上一个操作失败了)
+          userMessage = `⚠️ 自动切换失败：已自动回退到Account #${this.currentAuthIndex}，请检查目标账号是否存在问题。`;
         }
 
         this.logger.error(`[Auth] 后台账号切换任务最终失败: ${error.message}`);
@@ -1500,7 +1502,7 @@ class RequestHandler {
         return this._sendErrorResponse(
           res,
           503,
-          "服务器正在进行内部维护（账号切换/恢复），请稍后重试。",
+          "服务器正在进行内部维护（账号切换/恢复)，请稍后重试。",
         );
       }
 
@@ -1532,7 +1534,7 @@ class RequestHandler {
         return this._sendErrorResponse(
           res,
           503,
-          "服务暂时不可用：后端浏览器实例崩溃且无法自动恢复，请联系管理员。",
+          "服务暂时不Available：后端浏览器实例崩溃且无法自动恢复，请联系管理员。",
         );
       } finally {
         // 只有确信 WS 连上了，或者彻底失败了，才解锁
@@ -1547,7 +1549,7 @@ class RequestHandler {
       return this._sendErrorResponse(
         res,
         503,
-        "服务器正在进行内部维护（账号切换/恢复），请稍后重试。",
+        "服务器正在进行内部维护（账号切换/恢复)，请稍后重试。",
       );
     }
 
@@ -1592,7 +1594,7 @@ class RequestHandler {
         }
       } else {
         // --- 客户端想要非流式响应 ---
-        // 明确告知浏览器脚本本次应按“一次性JSON”（即fake模式）来处理
+        // 明确告知浏览器脚本本次应按“一次性JSON”（即fake模式)来处理
         proxyRequest.streaming_mode = "fake";
         await this._handleNonStreamResponse(proxyRequest, messageQueue, res);
       }
@@ -1904,7 +1906,7 @@ class RequestHandler {
       );
     } else {
       this.logger.warn(
-        `[Request] 无法发送取消指令：没有可用的浏览器WebSocket连接。`,
+        `[Request] 无法发送取消指令：没有Available的浏览器WebSocket连接。`,
       );
     }
   }
@@ -1988,7 +1990,7 @@ class RequestHandler {
     if (connection) {
       connection.send(JSON.stringify(proxyRequest));
     } else {
-      throw new Error("无法转发请求：没有可用的WebSocket连接。");
+      throw new Error("无法转发请求：没有Available的WebSocket连接。");
     }
   }
   _sendErrorChunkToClient(res, errorMessage) {
@@ -2023,11 +2025,11 @@ class RequestHandler {
       let lastMessage,
         requestFailed = false;
 
-      // 我们的重试循环（即使只跑一次）
+      // 我们的重试循环（即使只跑一次)
       for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
         if (attempt > 1) {
           this.logger.info(
-            `[Request] 请求尝试 #${attempt}/${this.maxRetries}...`,
+            `[Request] Request attempt #${attempt}/${this.maxRetries}...`,
           );
         }
         this._forwardRequest(proxyRequest);
@@ -2056,7 +2058,7 @@ class RequestHandler {
           ) {
             // 只有在不是“用户取消”的情况下，才打印“尝试失败”的警告
             this.logger.warn(
-              `[Request] 尝试 #${attempt} 失败: 收到 ${
+              `[Request] 尝试 #${attempt} failed: 收到 ${
                 lastMessage.status || "未知"
               } 错误。 - ${lastMessage.message}`,
             );
@@ -2247,7 +2249,7 @@ class RequestHandler {
         }
       }
 
-      // 3. 重置失败计数器（如果需要）
+      // 3. 重置失败计数器（如果需要)
       if (proxyRequest.is_generative && this.failureCount > 0) {
         this.logger.info(
           `✅ [Auth] 非流式生成请求成功 - 失败计数已从 ${this.failureCount} 重置为 0`,
@@ -2255,7 +2257,7 @@ class RequestHandler {
         this.failureCount = 0;
       }
 
-      // [核心修正] 对Google原生格式的响应进行智能图片处理
+      // [Core fix] 对Google原生格式的响应进行智能图片处理
       try {
         let parsedBody = JSON.parse(fullBody);
         let needsReserialization = false;
@@ -2752,7 +2754,7 @@ class RequestHandler {
       }
     }
 
-    // 如果没有任何内容变更，则不返回数据（避免空行）
+    // 如果没有任何内容变更，则不返回数据（避免空行)
     if (!delta.content && !delta.reasoning_content && !delta.tool_calls && !candidate.finishReason && !hasUsage) {
       return null;
     }
@@ -3010,7 +3012,7 @@ class ProxyServerSystem extends EventEmitter {
     } else {
       if (initialAuthIndex) {
         this.logger.warn(
-          `[System] 指定的启动索引 #${initialAuthIndex} 无效或不可用，将按默认顺序启动。`,
+          `[System] 指定的启动索引 #${initialAuthIndex} 无效或不Available，将按默认顺序启动。`,
         );
       }
       this.logger.info(
@@ -3024,15 +3026,15 @@ class ProxyServerSystem extends EventEmitter {
     // 3. <<<--- 遍历这个新的、可能被重排过的顺序列表 --->>>
     for (const index of startupOrder) {
       try {
-        this.logger.info(`[System] 尝试使用账号 #${index} 启动服务...`);
+        this.logger.info(`[System] 尝试使用Account #${index} 启动服务...`);
         await this.browserManager.launchOrSwitchContext(index);
 
         isStarted = true;
-        this.logger.info(`[System] ✅ 使用账号 #${index} 成功启动！`);
+        this.logger.info(`[System] ✅ 使用Account #${index} 成功启动！`);
         break; // 成功启动，跳出循环
       } catch (error) {
         this.logger.error(
-          `[System] ❌ 使用账号 #${index} 启动失败。原因: ${error.message}`,
+          `[System] ❌ 使用Account #${index} 启动失败。原因: ${error.message}`,
         );
         // 失败了，循环将继续，尝试下一个账号
       }
@@ -3223,13 +3225,13 @@ class ProxyServerSystem extends EventEmitter {
           const isInvalid = invalidIndices.includes(index);
           const name = isInvalid
             ? "N/A (JSON格式错误)"
-            : accountNameMap.get(index) || "N/A (未命名)";
+            : accountNameMap.get(index) || "N/A (unnamed)";
           return `<span class="label" style="padding-left: 20px;">账号${index}</span>: ${name}`;
         })
         .join("\n");
 
       const accountOptionsHtml = availableIndices
-        .map((index) => `<option value="${index}">账号 #${index}</option>`)
+        .map((index) => `<option value="${index}">Account #${index}</option>`)
         .join("");
 
       const statusHtml = `
@@ -3238,7 +3240,7 @@ class ProxyServerSystem extends EventEmitter {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>代理服务状态</title>
+        <title>代理Service Status</title>
         <style>
         body { font-family: 'SF Mono', 'Consolas', 'Menlo', monospace; background-color: #f0f2f5; color: #333; padding: 2em; }
         .container { max-width: 800px; margin: 0 auto; background: #fff; padding: 1em 2em 2em 2em; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
@@ -3267,18 +3269,18 @@ class ProxyServerSystem extends EventEmitter {
     </head>
     <body>
         <div class="container">
-        <p><a href="/import">📥 导入账号（JSON）</a></p>
-        <h1>代理服务状态 <span class="dot" title="数据动态刷新中..."></span></h1>
+        <p><a href="/import">📥 Import Account (JSON)</a></p>
+        <h1>代理Service Status <span class="dot" title="Refreshing data..."></span></h1>
         <div id="status-section">
             <pre>
-<span class="label">服务状态</span>: <span class="status-ok">Running</span>
+<span class="label">Service Status</span>: <span class="status-ok">Running</span>
 <span class="label">浏览器连接</span>: <span class="${
         browserManager.browser ? "status-ok" : "status-error"
       }">${!!browserManager.browser}</span>
 --- 服务配置 ---
-<span class="label">流模式</span>: ${
+<span class="label">Streaming Mode</span>: ${
         config.streamingMode
-      } (仅启用流式传输时生效)
+      } (Applies only when streaming is enabled)
 <span class="label">强制推理</span>: ${
         this.forceThinking ? "✅ 已启用" : "❌ 已关闭"
       }
@@ -3306,11 +3308,11 @@ class ProxyServerSystem extends EventEmitter {
             </pre>
         </div>
         <div id="actions-section" style="margin-top: 2em;">
-            <h2>操作面板</h2>
+            <h2>Action Panel</h2>
             <div class="action-group">
                 <select id="accountIndexSelect">${accountOptionsHtml}</select>
                 <button onclick="switchSpecificAccount()">切换账号</button>
-                <button onclick="toggleStreamingMode()">切换流模式</button>
+                <button onclick="toggleStreamingMode()">Toggle Streaming Mode</button>
                 <button onclick="toggleForceThinking()">切换强制推理</button>
             </div>
         </div>
@@ -3327,10 +3329,10 @@ class ProxyServerSystem extends EventEmitter {
                   return '<span class="label" style="padding-left: 20px;">账号' + acc.index + '</span>: ' + acc.name;
                 }).join('\\n');
                 statusPre.innerHTML =
-                    '<span class="label">服务状态</span>: <span class="status-ok">Running</span>\\n' +
+                    '<span class="label">Service Status</span>: <span class="status-ok">Running</span>\\n' +
                     '<span class="label">浏览器连接</span>: <span class="' + (data.status.browserConnected ? "status-ok" : "status-error") + '">' + data.status.browserConnected + '</span>\\n' +
                     '--- 服务配置 ---\\n' +
-                    '<span class="label">流模式</span>: ' + data.status.streamingMode + '\\n' +
+                    '<span class="label">Streaming Mode</span>: ' + data.status.streamingMode + '\\n' +
                     '<span class="label">强制推理</span>: ' + data.status.forceThinking + '\\n' +
                     '<span class="label">立即切换 (状态码)</span>: ' + data.status.immediateSwitchStatusCodes + '\\n' +
                     '<span class="label">API 密钥</span>: ' + data.status.apiKeySource + '\\n' +
@@ -3354,7 +3356,7 @@ class ProxyServerSystem extends EventEmitter {
         function switchSpecificAccount() {
             const selectElement = document.getElementById('accountIndexSelect');
             const targetIndex = selectElement.value;
-            if (!confirm(\`确定要切换到账号 #\${targetIndex} 吗？这会重置浏览器会话。\`)) {
+            if (!confirm(\`确定要切换到Account #\${targetIndex} 吗？这会重置浏览器会话。\`)) {
                 return;
             }
             fetch('/api/switch-account', {
@@ -3367,14 +3369,14 @@ class ProxyServerSystem extends EventEmitter {
                 if (err.message.includes('Load failed') || err.message.includes('NetworkError')) {
                     alert('⚠️ 浏览器启动较慢，操作仍在后台进行中。\\n\\n请不要重复点击。');
                 } else {
-                    alert('❌ 操作失败: ' + err);
+                    alert('❌ Action failed: ' + err);
                 }
                 updateContent();
             });
         }
 
         function toggleStreamingMode() {
-            const newMode = prompt('请输入新的流模式 (real 或 fake):', '${
+            const newMode = prompt('请输入新的Streaming Mode (real 或 fake):', '${
               this.config.streamingMode
             }');
             if (newMode === 'fake' || newMode === 'real') {
@@ -3422,13 +3424,13 @@ class ProxyServerSystem extends EventEmitter {
         const isInvalid = invalidIndices.includes(index);
         const name = isInvalid
           ? "N/A (JSON格式错误)"
-          : accountNameMap.get(index) || "N/A (未命名)";
+          : accountNameMap.get(index) || "N/A (unnamed)";
         return { index, name };
       });
 
       const data = {
         status: {
-          streamingMode: `${this.streamingMode} (仅启用流式传输时生效)`,
+          streamingMode: `${this.streamingMode} (Applies only when streaming is enabled)`,
           forceThinking: this.forceThinking ? "✅ 已启用" : "❌ 已关闭",
           browserConnected: !!browserManager.browser,
           immediateSwitchStatusCodes:
@@ -3461,12 +3463,12 @@ class ProxyServerSystem extends EventEmitter {
         const { targetIndex } = req.body;
         if (targetIndex !== undefined && targetIndex !== null) {
           this.logger.info(
-            `[WebUI] 收到切换到指定账号 #${targetIndex} 的请求...`,
+            `[WebUI] 收到Switch to Selected Account #${targetIndex} 的请求...`,
           );
           const result =
             await this.requestHandler._switchToSpecificAuth(targetIndex);
           if (result.success) {
-            res.status(200).send(`切换成功！已激活账号 #${result.newIndex}。`);
+            res.status(200).send(`切换成功！已激活Account #${result.newIndex}。`);
           } else {
             res.status(400).send(result.reason);
           }
@@ -3475,17 +3477,17 @@ class ProxyServerSystem extends EventEmitter {
           if (this.authSource.availableIndices.length <= 1) {
             return res
               .status(400)
-              .send("切换操作已取消：只有一个可用账号，无法切换。");
+              .send("切换操作已取消：只有一个Available账号，无法切换。");
           }
           const result = await this.requestHandler._switchToNextAuth();
           if (result.success) {
             res
               .status(200)
-              .send(`切换成功！已切换到账号 #${result.newIndex}。`);
+              .send(`切换成功！已切换到Account #${result.newIndex}。`);
           } else if (result.fallback) {
             res
               .status(200)
-              .send(`切换失败，但已成功回退到账号 #${result.newIndex}。`);
+              .send(`切换失败，但已成功回退到Account #${result.newIndex}。`);
           } else {
             res.status(409).send(`操作未执行: ${result.reason}`);
           }
