@@ -1,3 +1,7 @@
+(() => {
+  if (window.__aisProxyBridgeStarted) return;
+  window.__aisProxyBridgeStarted = true;
+
 const Logger = {
   enabled: true,
   output(...messages) {
@@ -9,7 +13,7 @@ const Logger = {
     console.log(`[ProxyClient] ${timestamp}`, ...messages);
     const logElement = document.createElement("div");
     logElement.textContent = `[${timestamp}] ${messages.join(" ")}`;
-    document.body.appendChild(logElement);
+    if (document.body) document.body.appendChild(logElement);
   },
 };
 
@@ -499,8 +503,6 @@ class ProxySystem extends EventTarget {
 }
 
 async function initializeProxySystem() {
-  // 清理旧的日志
-  document.body.innerHTML = "";
   const proxySystem = new ProxySystem();
   try {
     await proxySystem.initialize();
@@ -511,3 +513,4 @@ async function initializeProxySystem() {
 }
 
 initializeProxySystem();
+})();
