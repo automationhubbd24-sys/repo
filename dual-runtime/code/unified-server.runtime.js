@@ -174,10 +174,9 @@ class AuthSource {
     this._preValidateAndFilter(); // 预检验并过滤掉格式错误的源
 
     if (this.availableIndices.length === 0) {
-      this.logger.error(
-        `[Auth] 致命错误：在 '${this.authMode}' 模式下未找到任何有效的认证源。`,
+      this.logger.warn(
+        `[Auth] 在 '${this.authMode}' 模式下未找到任何有效的认证源；需要导入账号。`,
       );
-      throw new Error("No valid authentication sources found.");
     }
   }
 
@@ -2984,12 +2983,15 @@ class ProxyServerSystem extends EventEmitter {
     this.logger.info("[System] 开始弹性启动流程...");
     await this._startHttpServer();
     await this._startWebSocketServer();
-    this.logger.info("[System] 准备加载浏览器...");
     const allAvailableIndices = this.authSource.availableIndices;
 
     if (allAvailableIndices.length === 0) {
-      throw new Error("没有任何可用的认证源，无法启动。");
+      this.logger.info("[System] 服务器已就绪，等待导入账号。");
+      this.emit("started");
+      return;
     }
+
+    this.logger.info("[System] 准备加载浏览器...");
 
     // 2. <<<--- 创建一个优先尝试的启动顺序列表 --->>>
     let startupOrder = [...allAvailableIndices];
