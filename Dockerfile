@@ -43,9 +43,9 @@ RUN curl -fsSL "$CAMOUFOX_URL" -o /tmp/camoufox.zip \
 
 COPY dual-runtime/code/ ./
 
-RUN mkdir -p ./auth && chown -R node:node /app
+RUN mkdir -p ./auth
 
-USER node
+USER root
 
 EXPOSE 7860
 EXPOSE 9998
