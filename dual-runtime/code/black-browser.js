@@ -17,18 +17,26 @@ const Logger = {
   },
 };
 
-class ConnectionManager extends EventTarget {
+class ConnectionManager {
   // =================================================================
   // ===                 *** EDIT THIS LINE   *** ===
   constructor(endpoint = "ws://127.0.0.1:9998") {
     // =================================================================
-    super();
+    this.eventTarget = new EventTarget();
     this.endpoint = endpoint;
     this.socket = null;
     this.isConnected = false;
     this.reconnectDelay = 5000;
     this.reconnectAttempts = 0;
     this.operationSockets = new Map();
+  }
+
+  addEventListener(...args) {
+    return this.eventTarget.addEventListener(...args);
+  }
+
+  dispatchEvent(...args) {
+    return this.eventTarget.dispatchEvent(...args);
   }
 
   async establish() {
@@ -287,9 +295,9 @@ class RequestProcessor {
   }
 } // <--- Critical: ensure this brace exists
 
-class ProxySystem extends EventTarget {
+class ProxySystem {
   constructor(websocketEndpoint) {
-    super();
+    this.eventTarget = new EventTarget();
     this.connectionManager = new ConnectionManager(websocketEndpoint);
     this.requestProcessor = new RequestProcessor();
     this.connectionManager.addEventListener("message", (e) =>
@@ -298,6 +306,10 @@ class ProxySystem extends EventTarget {
     this.connectionManager.addEventListener("disconnected", () =>
       this.requestProcessor.cancelAllOperations()
     );
+  }
+
+  dispatchEvent(...args) {
+    return this.eventTarget.dispatchEvent(...args);
   }
 
   async initialize() {
