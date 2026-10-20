@@ -245,6 +245,9 @@ class RequestProcessor {
       try {
         let bodyObj = JSON.parse(requestSpec.body);
 
+        // Server-side request marker; Google does not accept it in its API payload.
+        delete bodyObj.__aisRid;
+
         // --- Module 1: smart filtering (preserved) ---
         const isImageModel =
           requestSpec.path.includes("-image-") ||
