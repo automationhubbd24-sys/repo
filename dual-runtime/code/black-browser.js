@@ -292,7 +292,12 @@ class ProxySystem extends EventTarget {
     super();
     this.connectionManager = new ConnectionManager(websocketEndpoint);
     this.requestProcessor = new RequestProcessor();
-    this._setupEventHandlers();
+    this.connectionManager.addEventListener("message", (e) =>
+      this._handleIncomingMessage(e.detail)
+    );
+    this.connectionManager.addEventListener("disconnected", () =>
+      this.requestProcessor.cancelAllOperations()
+    );
   }
 
   async initialize() {
@@ -310,14 +315,6 @@ class ProxySystem extends EventTarget {
     this.dispatchEvent(new CustomEvent("ready"));
   }
 
-  _setupEventHandlers() {
-    this.connectionManager.addEventListener("message", (e) =>
-      this._handleIncomingMessage(e.detail)
-    );
-    this.connectionManager.addEventListener("disconnected", () =>
-      this.requestProcessor.cancelAllOperations()
-    );
-  }
 
   async _handleIncomingMessage(messageData) {
     let requestSpec = {};
