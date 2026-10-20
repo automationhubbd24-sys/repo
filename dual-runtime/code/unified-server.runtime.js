@@ -412,8 +412,11 @@ class BrowserManager {
     );
 
     try {
+      // Camoufox rejects Playwright's default viewport protocol payload because it
+      // contains `isMobile`. A null viewport disables that default command.
       this.context = await this.browser.newContext({
         storageState: storageStateObject,
+        viewport: null,
       });
       await this.context.addInitScript({ content: buildScriptContent });
       if (process.env.WORKER_ACCOUNT) {
@@ -3036,8 +3039,11 @@ class ProxyServerSystem extends EventEmitter {
     }
 
     if (!isStarted) {
-      // 如果所有账号都尝试失败了
-      throw new Error("所有认证源均尝试失败，服务器无法启动。");
+      this.logger.error(
+        "[System] 所有认证源启动失败；HTTP 服务保持运行，可通过 /import 修复账号。",
+      );
+      this.emit("started");
+      return;
     }
     this.logger.info(`[System] 代理服务器系统启动完成。`);
     this.emit("started");
