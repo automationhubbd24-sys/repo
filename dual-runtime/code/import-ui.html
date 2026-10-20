@@ -1,6 +1,118 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
-<meta name="import-token" content="__CSRF_TOKEN__">
-<title>添加账号</title>
-<style>body{font:15px/1.6 system-ui,sans-serif;margin:0;display:grid;place-items:center;min-height:100vh;background:#f4f5f7;color:#1d1f23}a{color:#2563eb}@media(prefers-color-scheme:dark){body{background:#111316;color:#e7e9ec}a{color:#5b8cff}}</style></head>
-<body><p>添加账号已移到管理控制台，正在跳转… <a href="/#add">没有跳转请点这里</a></p></body></html>
+<html lang="bn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta name="import-token" content="__CSRF_TOKEN__">
+  <title>অ্যাকাউন্ট ইমপোর্ট</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f4f5f7; color: #1d1f23; }
+    main { box-sizing: border-box; width: min(100% - 2rem, 42rem); padding: 2rem; background: #fff; border-radius: .75rem; box-shadow: 0 .25rem 1rem #0002; }
+    h1 { margin-top: 0; font-size: 1.5rem; }
+    p { margin: .5rem 0 1rem; }
+    label { display: block; margin-top: 1rem; font-weight: 600; }
+    input, textarea, button { box-sizing: border-box; width: 100%; margin-top: .35rem; padding: .65rem; font: inherit; border: 1px solid #9ca3af; border-radius: .4rem; }
+    textarea { min-height: 10rem; resize: vertical; }
+    button { margin-top: 1.25rem; border: 0; background: #2563eb; color: #fff; cursor: pointer; font-weight: 700; }
+    button:disabled { cursor: wait; opacity: .7; }
+    #status { min-height: 1.5em; margin-top: 1rem; padding: .65rem; border-radius: .4rem; }
+    #status:empty { display: none; }
+    #status.success { background: #dcfce7; color: #166534; }
+    #status.error { background: #fee2e2; color: #991b1b; }
+    .back { display: inline-block; margin-top: 1rem; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #111316; color: #e7e9ec; }
+      main { background: #1b1e23; }
+      input, textarea { background: #111316; color: inherit; border-color: #626975; }
+      #status.success { background: #123720; color: #b7f7c8; }
+      #status.error { background: #481b1b; color: #fecaca; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>অ্যাকাউন্ট JSON ইমপোর্ট</h1>
+    <p>একটি JSON ফাইল নির্বাচন করুন অথবা নিচের ঘরে JSON পেস্ট করুন।</p>
+    <form id="import-form" novalidate>
+      <label for="account-alias">অ্যাকাউন্টের নাম (ঐচ্ছিক)</label>
+      <input id="account-alias" name="alias" type="text" maxlength="200" autocomplete="off">
+
+      <label for="json-file">JSON ফাইল (ঐচ্ছিক)</label>
+      <input id="json-file" name="file" type="file" accept=".json,application/json">
+
+      <label for="json-text">অথবা JSON পেস্ট করুন</label>
+      <textarea id="json-text" name="json" spellcheck="false" placeholder='{"key":"value"}'></textarea>
+
+      <button id="submit-button" type="submit">ইমপোর্ট করুন</button>
+      <div id="status" role="status" aria-live="polite"></div>
+    </form>
+    <a class="back" href="/">ড্যাশবোর্ডে ফিরে যান</a>
+  </main>
+  <script>
+    (() => {
+      const form = document.getElementById('import-form');
+      const fileInput = document.getElementById('json-file');
+      const textInput = document.getElementById('json-text');
+      const aliasInput = document.getElementById('account-alias');
+      const button = document.getElementById('submit-button');
+      const status = document.getElementById('status');
+      const token = document.querySelector('meta[name="import-token"]').content;
+
+      function showStatus(message, type) {
+        status.textContent = message;
+        status.className = type;
+      }
+
+      async function getJsonText() {
+        if (textInput.value.trim()) return textInput.value;
+        const file = fileInput.files[0];
+        if (!file) throw new Error('একটি JSON ফাইল নির্বাচন করুন অথবা JSON পেস্ট করুন।');
+        return file.text();
+      }
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        button.disabled = true;
+        showStatus('', '');
+
+        try {
+          const value = await getJsonText();
+          let account;
+          try {
+            account = JSON.parse(value);
+          } catch {
+            throw new Error('JSON টি সঠিকভাবে পার্স করা যায়নি।');
+          }
+
+          const headers = {
+            'Content-Type': 'application/json',
+            'X-Import-Token': token
+          };
+          const alias = aliasInput.value.trim();
+          if (alias) headers['X-Account-Alias'] = encodeURIComponent(alias);
+
+          const response = await fetch('/api/import-account', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(account),
+            credentials: 'same-origin'
+          });
+          const responseText = await response.text();
+          if (!response.ok) {
+            throw new Error(responseText || `ইমপোর্ট ব্যর্থ হয়েছে (HTTP ${response.status})।`);
+          }
+          showStatus(responseText || 'অ্যাকাউন্ট সফলভাবে ইমপোর্ট করা হয়েছে।', 'success');
+          form.reset();
+        } catch (error) {
+          showStatus(error instanceof Error ? error.message : 'ইমপোর্টের সময় একটি অজানা সমস্যা হয়েছে।', 'error');
+        } finally {
+          button.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
