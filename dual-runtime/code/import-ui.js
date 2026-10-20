@@ -6,11 +6,9 @@ const httpError=(status,error,extra)=>Object.assign(Error(error),{status,body:{e
 // Validate a Playwright storage-state payload. Never echoes cookie values.
 function validate(d){
   const str=x=>typeof x==="string";
-  const allowedCookieDomain=domain=>str(domain)&&/^\.?([a-z0-9-]+\.)*google\.com$/i.test(domain);
+  const validCookieDomain=domain=>str(domain)&&/^\.?(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(domain);
   d=Array.isArray(d)?{cookies:d,origins:[]}:d&&{cookies:d.cookies,origins:d.origins===undefined?[]:d.origins};
   if(!d || !Array.isArray(d.cookies) || !d.cookies.length || d.cookies.length>200 || !Array.isArray(d.origins) || d.origins.length>20) throw Error("Invalid top-level structure: cookies (1-200) and origins (1-20) arrays are required");
-  d.cookies=d.cookies.filter(c=>allowedCookieDomain(c&&(c.domain===undefined?c.host:c.domain)));
-  if(!d.cookies.length) throw Error("Invalid top-level structure: cookies (1-200) and origins (1-20) arrays are required");
   const cookies=d.cookies.map((c,i)=>{
     const rawExpires=c&&("expires" in c?c.expires:"expirationDate" in c?c.expirationDate:"expiry" in c?c.expiry:-1);
     const expires=Number(rawExpires), sameSite=!c||c.sameSite==null?"Lax":String(c.sameSite).replace(/[_ -]/g,"").toLowerCase();
@@ -18,10 +16,10 @@ function validate(d){
     const domain=c&&(c.domain===undefined?c.host:c.domain), normalizedExpires=Math.abs(expires)>1e11?expires/1000:expires;
     c={...c,domain,path:c&&c.path===undefined?"/":c&&c.path,expires:normalizedExpires,httpOnly:c&&c.httpOnly===undefined?false:c&&c.httpOnly,secure:c&&c.secure===undefined?true:c&&c.secure,sameSite:normalizedSameSite};
     if(!c || !str(c.name) || !c.name || c.name.length>256 || !str(c.value) || c.value.length>16384 ||
-       !str(c.domain) || !/^\.?([a-z0-9-]+\.)*google\.com$/i.test(c.domain) ||
+       !validCookieDomain(c.domain) ||
        !str(c.path) || !c.path.startsWith("/") || c.path.length>2048 ||
        !Number.isFinite(c.expires) || c.expires<-1 || typeof c.httpOnly!=="boolean" ||
-       typeof c.secure!=="boolean" || !["Lax","Strict","None"].includes(c.sameSite)) throw Error("Cookie #"+(i+1)+" has invalid fields (requires name/value/domain=google.com subdomain/path/expires seconds/httpOnly/secure/sameSite)");
+       typeof c.secure!=="boolean" || !["Lax","Strict","None"].includes(c.sameSite)) throw Error("Cookie #"+(i+1)+" has invalid fields (requires name/value/valid domain/path/expires seconds/httpOnly/secure/sameSite)");
     return {name:c.name,value:c.value,domain:c.domain,path:c.path,expires:c.expires,httpOnly:c.httpOnly,secure:c.secure,sameSite:c.sameSite};
   });
   const origins=d.origins.map(o=>{
