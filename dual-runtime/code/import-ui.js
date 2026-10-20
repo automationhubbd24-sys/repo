@@ -82,16 +82,24 @@ module.exports = function(app, system) {
     res.set("X-Frame-Options","DENY");
     res.send(fs.readFileSync(path.join(__dirname,"import-ui.html"),"utf8").replace("__CSRF_TOKEN__",req.session.importToken));
   });
-  app.post("/api/import-account",guard,(req,res)=>{
+  app.post("/api/import-account",guard,async(req,res)=>{
     if(!sameOrigin(req) || !req.session.importToken || req.get("X-Import-Token") !== req.session.importToken)
       return res.status(403).json({error:"请求校验失败，请刷新导入页面"});
     if(!req.is("application/json")) return res.status(415).json({error:"仅支持JSON"});
     if(system.authSource.authMode !== "file") return res.status(409).json({error:"非文件认证模式"});
     let alias="";try{alias=decodeURIComponent(req.get("X-Account-Alias")||"");}catch{}
-    try{const r=saveImport(system,req.body,{tier:req.get("X-Account-Tier"),alias,update:false});res.json({index:r.index,tier:r.tier,alias:r.alias,verified:false});}
-    catch(e){
+    try{
+      const r=saveImport(system,req.body,{tier:req.get("X-Account-Tier"),alias,update:false});
+      system.logger.info("[Import] 正在启动账号 #"+r.index+" 的浏览器会话...");
+      await system.browserManager.launchOrSwitchContext(r.index);
+      for(let i=0;i<40&&!system.connectionRegistry.hasActiveConnections();i++)await new Promise(resolve=>setTimeout(resolve,500));
+      const ready=system.connectionRegistry.hasActiveConnections();
+      if(!ready)throw httpError(503,"账号已保存，但浏览器没有建立代理连接；请检查部署日志中的 Browser 错误",{index:r.index});
+      system.logger.info("[Import] 账号 #"+r.index+" 已启动并连接就绪");
+      res.json({index:r.index,tier:r.tier,alias:r.alias,verified:true,ready:true});
+    }catch(e){
       if(e.status)return res.status(e.status).json(e.body);
-      res.status(400).json({error:"文件结构不符合要求，或无法安全保存",detail:e && e.message ? String(e.message).slice(0,200) : "unknown"});
+      res.status(400).json({error:"账号已保存，但浏览器启动失败",detail:e && e.message ? String(e.message).slice(0,200) : "unknown"});
     }
   });
 };

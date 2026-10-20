@@ -416,6 +416,7 @@ class BrowserManager {
         storageState: storageStateObject,
         viewport: { width: 1920, height: 1080 },
       });
+      await this.context.addInitScript({ content: buildScriptContent });
       if (process.env.WORKER_ACCOUNT) {
         await require('./verified-client-route').install(
           this.context, buildScriptContent,
