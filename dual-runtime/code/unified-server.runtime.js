@@ -414,7 +414,6 @@ class BrowserManager {
     try {
       this.context = await this.browser.newContext({
         storageState: storageStateObject,
-        viewport: { width: 1920, height: 1080 },
       });
       await this.context.addInitScript({ content: buildScriptContent });
       if (process.env.WORKER_ACCOUNT) {
