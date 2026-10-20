@@ -33,7 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY package*.json ./
 RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
-ARG CAMOUFOX_URL=https://github.com/daijro/camoufox/releases/download/v150.0.2-beta.25/camoufox-150.0.2-alpha.26-lin.x86_64.zip
+ARG CAMOUFOX_URL=https://github.com/daijro/camoufox/releases/download/v135.0.1-beta.24/camoufox-135.0.1-beta.24-lin.x86_64.zip
 RUN curl -fsSL "$CAMOUFOX_URL" -o /tmp/camoufox.zip \
     && unzip -q /tmp/camoufox.zip -d /tmp/camoufox \
     && mkdir -p /app/camoufox-linux \
