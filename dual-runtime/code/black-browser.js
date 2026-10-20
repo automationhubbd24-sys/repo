@@ -19,7 +19,7 @@ const Logger = {
 
 class ConnectionManager extends EventTarget {
   // =================================================================
-  // ===                 *** 请修改此行   *** ===
+  // ===                 *** EDIT THIS LINE   *** ===
   constructor(endpoint = "ws://127.0.0.1:9998") {
     // =================================================================
     super();
@@ -33,25 +33,25 @@ class ConnectionManager extends EventTarget {
 
   async establish() {
     if (this.isConnected) return Promise.resolve();
-    Logger.output("正在连接到服务器:", this.endpoint);
+    Logger.output("Connecting to server:", this.endpoint);
     return new Promise((resolve, reject) => {
       try {
         this.socket = new WebSocket(this.endpoint);
         this.socket.addEventListener("open", () => {
           this.isConnected = true;
           this.reconnectAttempts = 0;
-          Logger.output("✅ 连接成功!");
+          Logger.output("✅ Connected!");
           this.dispatchEvent(new CustomEvent("connected"));
           resolve();
         });
         this.socket.addEventListener("close", () => {
           this.isConnected = false;
-          Logger.output("❌ 连接已断开，准备重连...");
+          Logger.output("❌ Connection closed; reconnecting...");
           this.dispatchEvent(new CustomEvent("disconnected"));
           this._scheduleReconnect();
         });
         this.socket.addEventListener("error", (error) => {
-          Logger.output(" WebSocket 连接错误:", error);
+          Logger.output(" WebSocket connection error:", error);
           this.dispatchEvent(new CustomEvent("error", { detail: error }));
           if (!this.isConnected) reject(error);
         });
@@ -62,7 +62,7 @@ class ConnectionManager extends EventTarget {
         });
       } catch (e) {
         Logger.output(
-          "WebSocket 初始化失败。请检查地址或浏览器安全策略。",
+          "WebSocket initialization failed. Check the address or browser security policy.",
           e.message
         );
         reject(e);
@@ -74,7 +74,7 @@ class ConnectionManager extends EventTarget {
     if (data.request_id && this.operationSockets.has(data.request_id) &&
         this.operationSockets.get(data.request_id) !== this.socket) return false;
     if (!this.isConnected || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      Logger.output("无法发送数据：连接未建立");
+      Logger.output("Cannot send data: connection is not established");
       return false;
     }
     this.socket.send(JSON.stringify(data));
@@ -84,7 +84,7 @@ class ConnectionManager extends EventTarget {
   _scheduleReconnect() {
     this.reconnectAttempts++;
     setTimeout(() => {
-      Logger.output(`正在进行第 ${this.reconnectAttempts} 次重连尝试...`);
+      Logger.output(`Starting reconnect attempt ${this.reconnectAttempts}...`);
       this.establish().catch(() => {});
     }, this.reconnectDelay);
   }
@@ -95,8 +95,8 @@ class RequestProcessor {
     this.activeOperations = new Map();
     this.cancelledOperations = new Set();
     this.targetDomain = "generativelanguage.googleapis.com";
-    this.maxRetries = 3; // 最多尝试3次
-    this.retryDelay = 2000; // 每次重试前等待2秒
+    this.maxRetries = 3; // Maximum 3 attempts
+    this.retryDelay = 2000; // Wait 2 seconds before each retry
   }
 
   execute(requestSpec, operationId) {
@@ -111,7 +111,7 @@ class RequestProcessor {
     const cancelTimeout = () => {
       if (timeoutId) {
         clearTimeout(timeoutId);
-        Logger.output("已收到数据块，超时限制已解除。");
+        Logger.output("Received a data chunk; timeout cleared.");
       }
     };
 
@@ -122,7 +122,7 @@ class RequestProcessor {
             throw new DOMException("Request cancelled", "AbortError");
           }
           Logger.output(
-            `执行请求 (尝试 ${attempt}/${this.maxRetries}):`,
+            `Executing request (attempt ${attempt}/${this.maxRetries}):`,
             requestSpec.method,
             requestSpec.path
           );
@@ -138,7 +138,7 @@ class RequestProcessor {
           if (!response.ok) {
             const errorBody = await response.text();
             const error = new Error(
-              `Google API返回错误: ${response.status} ${response.statusText} ${errorBody}`
+              `Google API returned an error: ${response.status} ${response.statusText} ${errorBody}`
             );
             error.status = response.status;
             error.retryAfter = response.headers.get("retry-after");
@@ -161,9 +161,9 @@ class RequestProcessor {
             attempt < this.maxRetries
           ) {
             Logger.output(
-              `❌ 请求尝试 #${attempt} 失败: ${error.message.substring(0, 200)}`
+              `❌ Request attempt #${attempt} failed: ${error.message.substring(0, 200)}`
             );
-            Logger.output(`将在 ${this.retryDelay / 1000}秒后重试...`);
+            Logger.output(`Retrying in ${this.retryDelay / 1000} seconds...`);
             await new Promise((r) => setTimeout(r, this.retryDelay));
             continue;
           } else {
@@ -196,17 +196,17 @@ class RequestProcessor {
       : requestSpec.path;
     const queryParams = new URLSearchParams(requestSpec.query_params);
     if (requestSpec.streaming_mode === "fake") {
-      Logger.output("假流式模式激活，正在修改请求...");
+      Logger.output("Fake streaming mode enabled; modifying request...");
       if (pathSegment.includes(":streamGenerateContent")) {
         pathSegment = pathSegment.replace(
           ":streamGenerateContent",
           ":generateContent"
         );
-        Logger.output(`API路径已修改为: ${pathSegment}`);
+        Logger.output(`API path changed to: ${pathSegment}`);
       }
       if (queryParams.has("alt") && queryParams.get("alt") === "sse") {
         queryParams.delete("alt");
-        Logger.output('已移除 "alt=sse" 查询参数。');
+        Logger.output('Removed the "alt=sse" query parameter.');
       }
     }
     const queryString = queryParams.toString();
@@ -237,7 +237,7 @@ class RequestProcessor {
       try {
         let bodyObj = JSON.parse(requestSpec.body);
 
-        // --- 模块1：智能过滤 (保留) ---
+        // --- Module 1: smart filtering (preserved) ---
         const isImageModel =
           requestSpec.path.includes("-image-") ||
           requestSpec.path.includes("imagen");
@@ -254,7 +254,7 @@ class RequestProcessor {
 
         config.body = JSON.stringify(bodyObj);
       } catch (e) {
-        Logger.output("处理请求体时发生错误:", e.message);
+        Logger.output("Error processing request body:", e.message);
         config.body = requestSpec.body;
       }
     }
@@ -278,14 +278,14 @@ class RequestProcessor {
     return sanitized;
   }
   cancelOperation(operationId) {
-    this.cancelledOperations.add(operationId); // 核心：将ID加入取消集合
+    this.cancelledOperations.add(operationId); // Core: add ID to cancellation set
     const controller = this.activeOperations.get(operationId);
     if (controller) {
-      Logger.output(`收到取消指令，正在中止操作 #${operationId}...`);
+      Logger.output(`Received cancellation command; aborting operation #${operationId}...`);
       controller.abort();
     }
   }
-} // <--- 关键！确保这个括号存在
+} // <--- Critical: ensure this brace exists
 
 class ProxySystem extends EventTarget {
   constructor(websocketEndpoint) {
@@ -301,17 +301,17 @@ class ProxySystem extends EventTarget {
   }
 
   async initialize() {
-    Logger.output("系统初始化中...");
+    Logger.output("Initializing system...");
     while (true) {
       try {
         await this.connectionManager.establish();
         break;
       } catch (error) {
-        Logger.output("连接服务器失败，1秒后重试...");
+        Logger.output("Failed to connect to server; retrying in 1 second...");
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
-    Logger.output("系统初始化完成，等待服务器指令...");
+    Logger.output("System initialized; waiting for server commands...");
     this.dispatchEvent(new CustomEvent("ready"));
   }
 
@@ -321,7 +321,7 @@ class ProxySystem extends EventTarget {
     try {
       requestSpec = JSON.parse(messageData);
 
-      // --- 核心修改：根据 event_type 分发任务 ---
+      // --- Core change: dispatch by event_type ---
       switch (requestSpec.event_type) {
         case "worker_challenge":
           if (requestSpec.protocol === 1 &&
@@ -335,20 +335,20 @@ class ProxySystem extends EventTarget {
           }
           return;
         case "cancel_request":
-          // 如果是取消指令，则调用取消方法
+          // For a cancellation command, call the cancellation method
           this.requestProcessor.cancelOperation(requestSpec.request_id);
           break;
         default:
-          // 默认情况，认为是代理请求
-          // [最终优化] 直接显示路径，不再显示模式，因为路径本身已足够清晰
-          Logger.output(`收到请求: ${requestSpec.method} ${requestSpec.path}`);
+          // By default, treat it as a proxy request
+          // [Final optimization] Show only the path; its mode is already clear
+          Logger.output(`Received request: ${requestSpec.method} ${requestSpec.path}`);
 
           await this._processProxyRequest(requestSpec);
           break;
       }
     } catch (error) {
-      Logger.output("消息处理错误:", error.message);
-      // 只有在代理请求处理中出错时才发送错误响应
+      Logger.output("Message handling error:", error.message);
+      // Send an error response only when proxy request handling fails
       if (
         requestSpec.request_id &&
         requestSpec.event_type !== "cancel_request"
@@ -359,11 +359,11 @@ class ProxySystem extends EventTarget {
   }
 
   // 在 v3.4-black-browser.js 中
-  // [最终武器 - Canvas抽魂] 替换整个 _processProxyRequest 函数
+  // [Final approach - Canvas extraction] Replace the entire _processProxyRequest function
   async _processProxyRequest(requestSpec) {
     const operationId = requestSpec.request_id;
     const mode = requestSpec.streaming_mode || "fake";
-    Logger.output(`浏览器收到请求`);
+    Logger.output(`Browser received request`);
     const operationSocket = this.connectionManager.socket;
     let cancelTimeout = () => {};
     let reader = null;
@@ -391,7 +391,7 @@ class ProxySystem extends EventTarget {
       const textDecoder = new TextDecoder();
       let fullBody = "";
 
-      // [核心修正] 在循环内部正确分发流式和非流式数据
+      // [Core fix] Correctly dispatch streaming and non-streaming data inside the loop
       while (reader) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -399,11 +399,11 @@ class ProxySystem extends EventTarget {
         const chunk = textDecoder.decode(value, { stream: true });
 
         if (mode === "real") {
-          // 流式模式：立即转发每个数据块
+          // Streaming mode: forward each chunk immediately
           this._transmitChunk(chunk, operationId);
         } else {
           // fake mode
-          // 非流式模式：拼接数据块，等待最后一次性转发
+          // Non-streaming mode: concatenate chunks and forward once at the end
           fullBody += chunk;
         }
       }
@@ -411,19 +411,19 @@ class ProxySystem extends EventTarget {
       const tail = textDecoder.decode();
       if (mode === "real") this._transmitChunk(tail, operationId);
       else fullBody += tail;
-      Logger.output("数据流已读取完成。");
+      Logger.output("Finished reading data stream.");
 
       if (mode === "fake") {
-        // 非流式模式下，在循环结束后，转发拼接好的完整响应体
+        // In non-streaming mode, forward the assembled response after the loop
         this._transmitChunk(fullBody, operationId);
       }
 
       this._transmitStreamEnd(operationId);
     } catch (error) {
       if (error.name === "AbortError") {
-        Logger.output(`[诊断] 操作 #${operationId} 已被用户中止。`);
+        Logger.output(`[Diagnostic] Operation #${operationId} was aborted by the user.`);
       } else {
-        Logger.output(`❌ 请求处理失败: ${error.message}`);
+        Logger.output(`❌ Request processing failed: ${error.message}`);
       }
       this._sendErrorResponse(error, operationId);
     } finally {
@@ -478,7 +478,7 @@ class ProxySystem extends EventTarget {
       request_id: operationId,
       event_type: "stream_close",
     });
-    Logger.output("任务完成，已发送流结束信号");
+    Logger.output("Task complete; sent stream-end signal");
   }
 
   _sendErrorResponse(error, operationId) {
@@ -488,24 +488,40 @@ class ProxySystem extends EventTarget {
       event_type: "error",
       status: error.status || 504,
       retry_after: error.retryAfter || undefined,
-      message: `代理端浏览器错误: ${error.message || "未知错误"}`,
+      message: `Proxy browser error: ${error.message || "Unknown error"}`,
     });
-    // --- 核心修改：根据错误类型，使用不同的日志措辞 ---
+    // --- 核心修改：Use different log wording by error type ---
     if (error.name === "AbortError") {
-      Logger.output("已将“中止”状态发送回服务器");
+      Logger.output("Sent aborted status to server");
     } else {
-      Logger.output("已将“错误”信息发送回服务器");
+      Logger.output("Sent error details to server");
     }
   }
 }
 
 async function initializeProxySystem() {
-  const proxySystem = new ProxySystem();
   try {
+    Logger.output(
+      "Bridge diagnostics:",
+      `ProxySystem=${typeof ProxySystem}`,
+      `prototype.initialize=${typeof ProxySystem.prototype.initialize}`,
+    );
+
+    const proxySystem = new ProxySystem();
+    Logger.output(
+      "Bridge instance diagnostics:",
+      `initialize=${typeof proxySystem.initialize}`,
+      `prototype=${Object.getPrototypeOf(proxySystem)?.constructor?.name}`,
+    );
+
+    if (typeof proxySystem.initialize !== "function") {
+      throw new Error("Bridge initialization method is unavailable");
+    }
+
     await proxySystem.initialize();
   } catch (error) {
-    console.error("代理系统启动失败:", error);
-    Logger.output("代理系统启动失败:", error.message);
+    console.error("Proxy system failed to start:", error);
+    Logger.output("Proxy system failed to start:", error.message);
   }
 }
 
