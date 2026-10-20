@@ -198,29 +198,40 @@ class RequestProcessor {
     // Keep operation records until their fetch/stream actually settles.
   }
 
-  _constructUrl(requestSpec) {
+  _getGenerationPath(requestSpec) {
     let pathSegment = requestSpec.path.startsWith("/")
       ? requestSpec.path.substring(1)
       : requestSpec.path;
+
+    if (requestSpec.streaming_mode === "fake" && pathSegment.includes(":streamGenerateContent")) {
+      pathSegment = pathSegment.replace(":streamGenerateContent", ":generateContent");
+      Logger.output(`API path changed to: ${pathSegment}`);
+    }
+
+    return pathSegment;
+  }
+
+  _usesMakerSuiteBridge(requestSpec) {
+    return requestSpec.method === "POST" &&
+      /^v1beta\/models\/[^:/?]+:(?:generateContent|streamGenerateContent)$/.test(
+        this._getGenerationPath(requestSpec)
+      );
+  }
+
+  _constructUrl(requestSpec) {
+    if (this._usesMakerSuiteBridge(requestSpec)) {
+      const streamed = this._getGenerationPath(requestSpec).includes(":streamGenerateContent");
+      const rpcMethod = streamed ? "ProxyStreamedCall" : "ProxyUnaryCall";
+      return `https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/${rpcMethod}`;
+    }
+
+    const pathSegment = this._getGenerationPath(requestSpec);
     const queryParams = new URLSearchParams(requestSpec.query_params);
-    if (requestSpec.streaming_mode === "fake") {
-      Logger.output("Fake streaming mode enabled; modifying request...");
-      if (pathSegment.includes(":streamGenerateContent")) {
-        pathSegment = pathSegment.replace(
-          ":streamGenerateContent",
-          ":generateContent"
-        );
-        Logger.output(`API path changed to: ${pathSegment}`);
-      }
-      if (queryParams.has("alt") && queryParams.get("alt") === "sse") {
-        queryParams.delete("alt");
-        Logger.output('Removed the "alt=sse" query parameter.');
-      }
+    if (requestSpec.streaming_mode === "fake" && queryParams.get("alt") === "sse") {
+      queryParams.delete("alt");
     }
     const queryString = queryParams.toString();
-    return `https://${this.targetDomain}/${pathSegment}${
-      queryString ? "?" + queryString : ""
-    }`;
+    return `https://${this.targetDomain}/${pathSegment}${queryString ? "?" + queryString : ""}`;
   }
 
   _generateRandomString(length) {
@@ -245,8 +256,10 @@ class RequestProcessor {
       try {
         let bodyObj = JSON.parse(requestSpec.body);
 
-        // Server-side request marker; Google does not accept it in its API payload.
-        delete bodyObj.__aisRid;
+        const useMakerSuiteBridge = this._usesMakerSuiteBridge(requestSpec);
+        // The internal marker is accepted by the page's MakerSuite interceptor,
+        // which removes it before calling Google. Public API requests must not send it.
+        if (!useMakerSuiteBridge) delete bodyObj.__aisRid;
 
         // --- Module 1: smart filtering (preserved) ---
         const isImageModel =
@@ -263,7 +276,12 @@ class RequestProcessor {
           }
         }
 
-        config.body = JSON.stringify(bodyObj);
+        config.body = useMakerSuiteBridge
+          ? JSON.stringify([
+              `models/${this._getGenerationPath(requestSpec).match(/^v1beta\/models\/([^:/?]+):/)[1]}:${this._getGenerationPath(requestSpec).includes(":streamGenerateContent") ? "stream" : ""}generateContent`,
+              JSON.stringify(bodyObj),
+            ])
+          : JSON.stringify(bodyObj);
       } catch (e) {
         Logger.output("Error processing request body:", e.message);
         config.body = requestSpec.body;
