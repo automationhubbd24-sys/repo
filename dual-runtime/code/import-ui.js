@@ -6,8 +6,11 @@ const httpError=(status,error,extra)=>Object.assign(Error(error),{status,body:{e
 // Validate a Playwright storage-state payload. Never echoes cookie values.
 function validate(d){
   const str=x=>typeof x==="string";
+  const allowedCookieDomain=domain=>str(domain)&&/^\.?([a-z0-9-]+\.)*google\.com$/i.test(domain);
   d=Array.isArray(d)?{cookies:d,origins:[]}:d&&{cookies:d.cookies,origins:d.origins===undefined?[]:d.origins};
   if(!d || !Array.isArray(d.cookies) || !d.cookies.length || d.cookies.length>200 || !Array.isArray(d.origins) || d.origins.length>20) throw Error("Invalid top-level structure: cookies (1-200) and origins (1-20) arrays are required");
+  d.cookies=d.cookies.filter(c=>allowedCookieDomain(c&&(c.domain===undefined?c.host:c.domain)));
+  if(!d.cookies.length) throw Error("Invalid top-level structure: cookies (1-200) and origins (1-20) arrays are required");
   const cookies=d.cookies.map((c,i)=>{
     const rawExpires=c&&("expires" in c?c.expires:"expirationDate" in c?c.expirationDate:"expiry" in c?c.expiry:-1);
     const expires=Number(rawExpires), sameSite=!c||c.sameSite==null?"Lax":String(c.sameSite).replace(/[_ -]/g,"").toLowerCase();
