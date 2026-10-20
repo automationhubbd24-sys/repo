@@ -2850,7 +2850,7 @@ class ProxyServerSystem extends EventEmitter {
       immediateSwitchStatusCodes: [429, 503],
       // [新增] 用于追踪API密钥来源
       apiKeySource: "未设置",
-      targetUrl: "",
+      targetUrl: "https://aistudio.google.com/prompts/new_chat",
     };
 
     const configPath = path.join(__dirname, "config.json");
