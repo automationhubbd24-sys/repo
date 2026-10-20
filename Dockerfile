@@ -35,7 +35,8 @@ RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
 ARG CAMOUFOX_URL=https://github.com/daijro/camoufox/releases/download/v135.0.1-beta.24/camoufox-135.0.1-beta.24-lin.x86_64.zip
 RUN curl -fsSL "$CAMOUFOX_URL" -o /tmp/camoufox.zip \
-    && unzip -q /tmp/camoufox.zip -d /tmp/camoufox \
+    && (unzip -q /tmp/camoufox.zip -d /tmp/camoufox || true) \
+    && test -n "$(find /tmp/camoufox -type f -name camoufox -print -quit)" \
     && mkdir -p /app/camoufox-linux \
     && find /tmp/camoufox -type f -name camoufox -exec sh -c 'cp -a "$(dirname "$1")"/. /app/camoufox-linux/' _ {} \; \
     && rm -rf /tmp/camoufox /tmp/camoufox.zip \
